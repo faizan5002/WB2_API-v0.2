@@ -18,9 +18,9 @@ function generateSign($account, $password, $apiSecret) {
 }
 
 // Example usage
-$account = 'Sallu';
-$password = 'HAha@1234';
-$apiSecret = 'thisismysecretkey'; // Replace this with your actual API secret key
+$account = 'kim_jo';
+$password = 'Kimaa@1234';
+$apiSecret = 'ORbcWgiGk1duB0qi0Q4CAUGeL3WBFasnub2w9QBy'; // Replace this with your actual API secret key
 
 $generatedSign = generateSign($account, $password, $apiSecret);
 
