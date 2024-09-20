@@ -14,7 +14,7 @@ class CreateAgentAccountUserApiGameTable extends Migration
     {
         Schema::create('agent_account_user_api_game', function (Blueprint $table) {
             $table->id(); // Auto-incrementing ID
-            $table->string('agent', 20)->unique(); // Agent account name
+            $table->string('agent', 20)->unique()->index(); // Agent account name
             $table->string('password'); // Encrypted password
             $table->string('currency', 3); // Currency (e.g., USD, VND)
             $table->decimal('credit', 10, 2)->default(0); // Default credit
