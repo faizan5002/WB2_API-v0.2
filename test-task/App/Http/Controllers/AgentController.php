@@ -217,3 +217,158 @@ class AgentController extends Controller
             return response()->json(['code' => -500, 'message' => 'An error occurred while processing your request'], 500);
         }
     }
+    
+    public function updateAgentAccount(Request $request)
+    {
+        // Log the start of the request
+        Log::info('Update Agent Account Request Started', ['request' => $request->all()]);
+        
+        // Validate the request data
+        $validator = Validator::make($request->all(), [
+            'sign' => 'required|string',
+            'agent' => 'required|string', // Ensure the agent is present in the request
+            'account' => 'required|array',
+            'account.currency' => 'required|string|in:USD,VND,EUR', // Add more currencies as needed
+            'account.credit' => 'required|numeric|min:0',
+            'account.status' => 'required|integer|in:0,1' // 0 = normal, 1 = locked
+        ]);
+    
+        if ($validator->fails()) {
+            Log::error('Validation Failed', [
+                'errors' => $validator->errors()->toArray(),
+                'request_data' => $request->except('sign') // Exclude sign from logs
+            ]);
+            return response()->json(['code' => -1, 'message' => 'Agent data format invalid', 'errors' => $validator->errors()], 400);
+        }
+    
+        // Retrieve the request data
+        $sign = $request->input('sign');
+        $agentName = $request->input('agent'); // Retrieve the agent name from the request
+        $accountData = $request->input('account');
+        $currency = $accountData['currency'];
+        $credit = $accountData['credit'];
+        $status = $accountData['status'];
+    
+        // Log the validated data
+        Log::info('Validated Data', ['agent' => $agentName, 'currency' => $currency, 'credit' => $credit, 'status' => $status]);
+    
+        try {
+            // Check if agent exists using mysql_slave
+            $agent = AgentAccount::on('mysql_slave')->where('agent', $agentName)->first();
+            if (!$agent) {
+                Log::warning('Agent account not found', ['account' => $agentName]);
+                return response()->json(['code' => -2, 'message' => 'Agent account does not exist'], 404);
+            }
+    
+            // Retrieve the agent's API secret key
+            $apiSecretKey = $agent->api_secret_key;
+            Log::info('Retrieved API Secret Key', ['agent' => $agent->agent]);
+    
+            // Include the agent in the sign generation (similar to your custom sign generation code)
+            $data = array_merge(['agent' => $agentName], [
+                'currency' => $currency,
+                'credit' => $credit,
+                'status' => $status
+            ]);
+    
+            // Sort by keys in ascending order
+            ksort($data);
+    
+            // Concatenate the values into a single string
+            $dataString = implode('', $data);
+    
+            // Generate the sign string by hashing the concatenated data and the API secret key
+            $generatedSign = hash('sha256', $dataString . $apiSecretKey);
+    
+            // Log the generated sign string
+            Log::info('Generated Sign String', ['data_string' => $dataString, 'generated_sign' => $generatedSign]);
+    
+            // Verify the sign
+            if ($sign !== $generatedSign) {
+                Log::warning('Invalid sign string', [
+                    'expected_sign' => $generatedSign,
+                    'received_sign' => $sign
+                ]);
+                return response()->json(['code' => -100, 'message' => 'Invalid sign string'], 400);
+            }
+    
+            // Update the agent account details
+            $agent->currency = $currency;
+            $agent->credit = $credit;
+            $agent->status = $status;
+            $agent->save();
+    
+            // Log the successful update
+            Log::info('Agent Account Updated Successfully', [
+                'agent' => $agent->agent,
+                'currency' => $agent->currency,
+                'credit' => $agent->credit,
+                'status' => $agent->status
+            ]);
+    
+            // Prepare the response data
+            $responseData = [
+                'account' => $agent->agent,
+                'currency' => $agent->currency,
+                'credit' => $agent->credit,
+                'status' => $agent->status
+            ];
+    
+            return response()->json([
+                'code' => 1,
+                'data' => $responseData
+            ], 200);
+    
+        } catch (\Exception $e) {
+            // Log the exception
+            Log::error('Error Updating Agent Account', [
+                'message' => $e->getMessage(),
+                'stack_trace' => $e->getTraceAsString()
+            ]);
+    
+            // Return an internal server error response
+            return response()->json(['code' => -500, 'message' => 'Internal Server Error'], 500);
+        }
+    }
+    public function getAgentList(Request $request)
+{
+    // Retrieve pageNum and pageSize from the request, with defaults
+    $pageNum = $request->input('pageNum', 1);
+    $pageSize = $request->input('pageSize', 20);
+
+    // Log the request
+    Log::info('Fetching Agent List', ['pageNum' => $pageNum, 'pageSize' => $pageSize]);
+
+    try {
+        // Query the agent data using MySQL-slave with pagination
+        $agents = AgentAccount::on('mysql_slave')
+            ->select('id', 'agent as account', 'currency', 'credit', 'status')
+            ->paginate($pageSize, ['*'], 'page', $pageNum);
+
+        // Log the results count
+        Log::info('Agent List Fetched Successfully', ['total' => $agents->total()]);
+
+        // Return the paginated data with success response
+        return response()->json([
+            'code' => 1,
+            'data' => [
+                'pageNum' => $agents->currentPage(),
+                'pageSize' => $agents->perPage(),
+                'prePage' => $agents->previousPageUrl(),
+                'nextPage' => $agents->nextPageUrl(),
+                'isFirstPage' => $agents->onFirstPage(),
+                'isLastPage' => !$agents->hasMorePages(),
+                'data' => $agents->items()
+            ]
+        ], 200);
+
+    } catch (\Exception $e) {
+        // Log any exceptions
+        Log::error('Error Fetching Agent List', ['message' => $e->getMessage()]);
+
+        return response()->json(['code' => -500, 'message' => 'Internal Server Error'], 500);
+    }
+}
+
+    
+}
